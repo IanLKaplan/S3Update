@@ -116,11 +116,15 @@ public class S3Update {
      * </p>
      * <p>
      * One way to make this faster would be to move this function to an AWS Lambda function. The file would still have to be
-     * read, but it would be read within Amazon's virtual private cloud. This AWS Lambda function would return the MD5 hash.
+     * read, but it would be read within Amazon's virtual private cloud (VPC). The VPC network speed can be expected to be
+     * close to the speed of disk. This AWS Lambda function would return the MD5 hash.
+     * </p>
+     * <p>
+     * For a discussion of Lambda functions and example Java code, see https://github.com/IanLKaplan/LambdaImageProcessing
      * </p>
      * 
      * @param s3Path
-     * @return
+     * @return the MD5 hash for the file or an empty string if the calculation failed.
      */
     protected String calculateS3MD5Hash(final String s3Path ) {
         InputStream istream = s3Service.s3ToInputStream(s3Path);
