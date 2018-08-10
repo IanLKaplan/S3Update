@@ -187,26 +187,20 @@ class S3Service implements IS3Keys {
 		return exists;
 	}
 	
-	/**
-	 * <p>
-	 * Return the MD5 hash for a file stored in AWS S3.
-	 * </p>
-	 * @param s3Path the S3 path (key) for the object
-	 * @return the MD5 hash for the object.
-	 */
-	public String getMD5Hash(String s3Path) {
-	    String md5Hash = null; 
-	    try {
-	        ObjectMetadata metaData = getS3Client().getObjectMetadata( getBucketName(),  s3Path );
-	        if (metaData != null) {
-	            md5Hash = metaData.getContentMD5();
-	        }
-	    }
-	    catch (AmazonClientException e) {
-	        log.error("Error obtaining metadata for the S3 object on the path " + s3Path + ": " + e.getLocalizedMessage() );
-	    }
-	    return md5Hash;
-	}
+	
+	  /**
+     * Return an input stream associated with an S3 object (e.g., a text file or an image).
+     * 
+     * @param s3Key the S3 path and file name for the object (e.g., /foo/bar/imnaked.jpg)
+     * @return an InputStream associated with the object.
+     * @throws AmazonClientException 
+     */
+    public InputStream s3ToInputStream(String s3Key) throws AmazonClientException {
+        GetObjectRequest objRequest = new GetObjectRequest( getBucketName(), s3Key);
+        S3Object s3Obj = getS3Client().getObject( objRequest );
+        InputStream istream = s3Obj.getObjectContent();
+        return istream;
+    }
 	
 	
 	/**

@@ -12,7 +12,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
+import java.io.InputStream;
 
 import org.apache.log4j.Logger;
 
@@ -70,6 +70,17 @@ public class S3Update {
         System.err.println("usage: " + this.getClass().getName() + "<source dir> <s3 root path>");
     }
     
+    
+    protected String calculateMD5Hash(InputStream stream, String path ) {
+        String md5 = "";
+        try {
+            md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex( stream );
+        } catch (IOException e) {
+            log.error("Error calculating md5 hash for " + path );
+        }
+        return md5;
+    }
+    
     /**
      * Calculate the MD5 cryptographic hash for a file on the local computer.
      * @param file
@@ -77,14 +88,44 @@ public class S3Update {
      */
     protected String calculateMD5Hash(File file ) {
         String md5 = "";
+        FileInputStream fis = null;
         try {
-            FileInputStream fis = new FileInputStream( file );
-            md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(fis);
-            fis.close();
+            fis = new FileInputStream( file );
+            md5 = calculateMD5Hash( fis, file.getPath() );
         } catch (IOException e) {
-            log.error("Error calculating md5 hash for " + file.getPath() );
+            log.error("Error referencing file " + file.getPath() );
+        }
+        finally {
+            if (fis != null) {
+                try { fis.close(); } catch (IOException e) {}
+            }
         }
         return md5;
+    }
+    
+  
+    /**
+     * <p>
+     * Read an S3 file and calculate the MD5 hash.
+     * </p>
+     * <p>
+     * According to the AWS documentation, S3 metadata contains an MD5 hash. Unfortunately, in practice this
+     * hash value always seems to be null. There does not appear to be a way to obtain an accurate MD5 hash without reading
+     * the file (unless, as a user you store your own metadata). Obviously this is a problem for large files, since reading
+     * the file involves transferring the file over HTTP.
+     * </p>
+     * <p>
+     * One way to make this faster would be to move this function to an AWS Lambda function. The file would still have to be
+     * read, but it would be read within Amazon's virtual private cloud. This AWS Lambda function would return the MD5 hash.
+     * </p>
+     * 
+     * @param s3Path
+     * @return
+     */
+    protected String calculateS3MD5Hash(final String s3Path ) {
+        InputStream istream = s3Service.s3ToInputStream(s3Path);
+        String md5hash = calculateMD5Hash( istream, s3Path );
+        return md5hash;
     }
 
     /**
@@ -118,7 +159,7 @@ public class S3Update {
                     }
                     if (s3Service.pathExists(s3Path)) {
                         String sourceMD5 = calculateMD5Hash( file );
-                        String s3MD5 = s3Service.getMD5Hash(s3Path);
+                        String s3MD5 = calculateS3MD5Hash( s3Path );
                         if (sourceMD5.length() > 0 && s3MD5.length() > 0) {
                             if (! sourceMD5.equals(s3MD5)) {
                                 // The file exists on S3 but does not match the local file, so copy the local file
