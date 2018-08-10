@@ -143,6 +143,7 @@ public class S3Update {
         if (file.exists()) {
             if (file.canRead()) {
                 if (file.isDirectory()) {
+                    log.info("processing directory " + file.getPath() );
                     File[] fileList = file.listFiles();
                     for (File fileElem : fileList ) {
                         // Replace back-slash characters for Windows file systems.
@@ -172,7 +173,7 @@ public class S3Update {
                     if (copyLocalFile) {
                         // write the local file to S3 on the path s3Path
                         try {
-                            log.info("Copying " + s3Path );
+                            log.info("Copying " + file.getPath() );
                             s3Service.writeFile(s3Path, file);
                         } catch (AmazonClientException | FileNotFoundException e) {
                             log.error("Error writing file to S3 path " + s3Path);
