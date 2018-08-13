@@ -59,6 +59,53 @@ import com.amazonaws.util.Base64;
 class S3Service implements IS3Keys {
     private final static Regions REGIONS = Regions.US_WEST_1;
     private Logger log = Logger.getLogger(getClass().getName());
+    
+    /**
+     * <p>
+     * S3ContentType
+     * </p>
+     * <p>
+     * The media content for the file downloaded to Amazon S3
+     * </p>
+     * <p>
+     * Mar 14, 2015
+     * </p>
+     * 
+     * @author Ian Kaplan, iank@bearcave.com
+     */
+    public enum S3ContentType {
+        TEXT("text/html"),
+        GIF("image/gif"),   // GIF image; Defined in RFC 2045 and RFC 2046
+        JPEG("image/jpeg"), // JPEG JFIF image; Defined in RFC 2045 and RFC 2046
+        PNG("image/png"),   // Portable Network Graphics; Registered,[13] Defined in RFC 2083
+        TIFF("image/tiff"); // TIF image;
+        
+        private final String contentType;
+        private S3ContentType( final String type ) {
+            contentType = type;
+        }
+        public String getType() { return contentType; }
+    }
+    
+    /**
+     * Return the content type for a file. By default the content type is "text/html"
+     * 
+     * @param fileName the path to the file
+     * @return the HTTP content type
+     */
+    private String findContentType( String fileName ) {
+        String contentType = S3ContentType.TEXT.getType();
+        if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+            contentType = S3ContentType.JPEG.getType();
+        } else if (fileName.endsWith(".png")) {
+            contentType = S3ContentType.PNG.getType();
+        } else if (fileName.endsWith(".tiff")) {
+            contentType = S3ContentType.TIFF.getType();
+        } else if (fileName.endsWith(".gif")) {
+            contentType = S3ContentType.GIF.getType();
+        }
+        return contentType;
+    }
 		
     // The AmazonS3Client is thread safe. In the AWS S3 Forum an Amazon engineer commented:
     // "All the clients in the AWS SDK for Java are thread safe, and you're encouraged to reuse client 
@@ -95,7 +142,24 @@ class S3Service implements IS3Keys {
 
     
     /**
+     * <p>
      * Write an InputStream to an S3 bucket.
+     * </p>
+     * <p>
+     * Setting the content type is important. If the type of an html file is not set to "text/html" the file will not be
+     * served properly. Instead it will be treated as a downloadable file. 
+     * </p>
+     * <p>
+     * One of the anoying features of S3 is that it does not store the MD5 hash. The hash exists only during transmision. This 
+     * cannot be altered (apparently) by setting the MD5 hash in the metadata. In a stackoverflow post there is this comment:
+     * </p>
+     * <blockquote>
+     * MD5 is only meaningful during the transmission and its life cycle stops once the transmission is received and validated. 
+     * To persist it on the server side serves no purpose.
+     * </blockquote>
+     * <p>
+     * https://stackoverflow.com/questions/35398320/how-can-i-set-the-content-md5-when-i-upload-a-file-to-s3/35422109
+     * </p>
      * 
      * @param s3Key the "path" and file name for the object (e.g., /foo/bar/mySelfie.jpg)
      * @param istream an InputStream for the object to be written to S3
@@ -106,7 +170,7 @@ class S3Service implements IS3Keys {
      * @throws AmazonClientException 
      * @throws NoSuchAlgorithmException 
      */
-	public boolean writeStream(String s3Key, InputStream istream, long numBytes ) throws AmazonClientException {
+	public boolean writeStream(String s3Key, InputStream istream, long numBytes, String contentType ) throws AmazonClientException {
 		boolean hashOK = false;
 		// Calculate the MD5 hash as the data is written
 		DigestInputStream distream = null;
@@ -115,6 +179,7 @@ class S3Service implements IS3Keys {
 		    distream = new DigestInputStream(istream, md);
 		    ObjectMetadata metadata = new ObjectMetadata();
 		    metadata.setContentLength( numBytes );
+		    metadata.setContentType( contentType );
 		    PutObjectRequest putRequest = new PutObjectRequest( getBucketName(), s3Key, distream, metadata );
 		    PutObjectResult rslt = getS3Client().putObject( putRequest );
 		    String md5Hash = rslt.getContentMd5();
@@ -151,7 +216,9 @@ class S3Service implements IS3Keys {
         long length = outFile.length();
         boolean hashOK = false;
 		try {
-			hashOK = writeStream(s3Key, istream, length );
+		    String contentType = findContentType( outFile.getPath() );
+		    
+			hashOK = writeStream(s3Key, istream, length, contentType );
 		}
 		finally {
 			if (istream != null) {
