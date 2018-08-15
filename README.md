@@ -1,9 +1,9 @@
 # S3Update
 A Java application that copies/updates files in an Amazon Web Services (AWS) Simple Storage System (S3) bucket 
-with files from a local directory tree.
+with files from a local directory tree.  This code is targeted at copying website files from a directory on your local system to a publicly viewable S3 bucket.
 
 AWS S3 is a web based storage system. Access to S3 takes place via HTTP. This allows S3 to host web content that is
-(generally) static.
+(generally) static. Hosting static web sites on Amazon S3 costs far less that most alternatives.
 
 Often the web content is developed on the local system and then downloaded to AWS S3. For any sizable web site, copying 
 the files and directories can be time consuming, tedious and error prone (e.g., a file or directory can be mistakenly omitted).
