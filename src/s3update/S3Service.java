@@ -1,19 +1,14 @@
 package s3update;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.DigestInputStream;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
 
-import javax.xml.bind.DatatypeConverter;
-
+import org.apache.commons.codec.binary.Hex;
 import org.apache.log4j.Logger;
 
 import com.amazonaws.AmazonClientException;
@@ -23,18 +18,15 @@ import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.regions.Region;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.PutObjectResult;
 import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.util.Base64;
 
 
@@ -58,6 +50,7 @@ import com.amazonaws.util.Base64;
  */
 class S3Service implements IS3Keys {
     private final static Regions REGIONS = Regions.US_WEST_1;
+    private final static String USER_MD5_HASH = "userMetaData";
     private Logger log = Logger.getLogger(getClass().getName());
     
     /**
@@ -139,7 +132,68 @@ class S3Service implements IS3Keys {
 		}
 		return s3client;
 	}
+	
+	
+	public static String calculateMD5Hash(InputStream stream, String path, Logger log) {
+        String md5 = "";
+        try {
+            md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex( stream );
+        } catch (IOException e) {
+            log.error("Error calculating md5 hash for " + path );
+        }
+        return md5;
+    }
+    
+    /**
+     * Calculate the MD5 cryptographic hash for a file on the local computer.
+     * @param file
+     * @return
+     */
+    public static String calculateMD5Hash(File file, Logger log ) {
+        String md5 = "";
+        FileInputStream fis = null;
+        try {
+            fis = new FileInputStream( file );
+            md5 = calculateMD5Hash( fis, file.getPath(), log );
+        } catch (IOException e) {
+            log.error("Error referencing file " + file.getPath() );
+        }
+        finally {
+            if (fis != null) {
+                try { fis.close(); } catch (IOException e) {}
+            }
+        }
+        return md5;
+    }
 
+    
+    /**
+     * <p>
+     * Return the MD5 hash value for the file, stored in as user metadata in the S3 ObjectMetadata.
+     * </p>
+     * <p>
+     * Files stored in S3 have an ETag value, which may (or may not be) an MD5 hash value. To avoid having
+     * to deal with the ETag value and it's definition, the code in this application that writes files to
+     * S3 calculates the MD5 hash and stores it in the user metadata.
+     * </p>
+     * @param s3Path
+     * @return
+     */
+    public String getS3FileMD5Hash( String s3Path ) {
+        String md5Hash = "";
+        try {
+            ObjectMetadata s3metaData = getS3Client().getObjectMetadata(getBucketName(), s3Path );
+            if (s3metaData != null) {
+                String s3Hash = s3metaData.getUserMetaDataOf( USER_MD5_HASH);
+                if (s3Hash != null && s3Hash.length() > 0) {
+                    md5Hash = s3Hash;
+                }
+            }
+        } catch (AmazonClientException e) {
+            log.error("Error reading metadata for S3 path " + s3Path + ": " + e.getLocalizedMessage());
+        }
+        return md5Hash;
+    }
     
     /**
      * <p>
@@ -150,53 +204,38 @@ class S3Service implements IS3Keys {
      * served properly. Instead it will be treated as a downloadable file. 
      * </p>
      * <p>
-     * One of the anoying features of S3 is that it does not store the MD5 hash. The hash exists only during transmision. This 
-     * cannot be altered (apparently) by setting the MD5 hash in the metadata. In a stackoverflow post there is this comment:
-     * </p>
-     * <blockquote>
-     * MD5 is only meaningful during the transmission and its life cycle stops once the transmission is received and validated. 
-     * To persist it on the server side serves no purpose.
-     * </blockquote>
-     * <p>
-     * https://stackoverflow.com/questions/35398320/how-can-i-set-the-content-md5-when-i-upload-a-file-to-s3/35422109
+     * The MD5 hash value for the file is stored in the user metadata for the S3 file. This avoids issues with calculating
+     * the S3 ETag value for the file.
      * </p>
      * 
      * @param s3Key the "path" and file name for the object (e.g., /foo/bar/mySelfie.jpg)
      * @param istream an InputStream for the object to be written to S3
      * @param numBytes the size of the object, in bytes
      * @param contentType the HTML content type.
+     * @param md5Hash the MD5 hash value for the source (local file) being written to S3
      * @return true if the hash of the S3 object is the same as the hash calculated from the input stream. False if there
      *         was a write failure or if the hash does not match.
      * @throws AmazonClientException 
      * @throws NoSuchAlgorithmException 
      */
-	public boolean writeStream(String s3Key, InputStream istream, long numBytes, String contentType ) throws AmazonClientException {
-		boolean hashOK = false;
-		// Calculate the MD5 hash as the data is written
-		DigestInputStream distream = null;
-		try {
-		    MessageDigest md = MessageDigest.getInstance("MD5");
-		    distream = new DigestInputStream(istream, md);
-		    ObjectMetadata metadata = new ObjectMetadata();
-		    metadata.setContentLength( numBytes );
-		    metadata.setContentType( contentType );
-		    PutObjectRequest putRequest = new PutObjectRequest( getBucketName(), s3Key, distream, metadata );
-		    PutObjectResult rslt = getS3Client().putObject( putRequest );
-		    String md5Hash = rslt.getContentMd5();
-		    byte[] s3Digest = md.digest();
-		    String s3MD5 = Base64.encodeAsString( s3Digest );
-		    hashOK = md5Hash.equals(s3MD5);
-		    if (! hashOK) {
-		        log.error(this.getClass().getName() + "::writeStream: error writing to S3 storage for " + s3Key);
-		    }
-		} catch (NoSuchAlgorithmException e) {
-		    log.error("Error allocating an MD5 message digest: " + e.getLocalizedMessage() );
+    public boolean writeStream(String s3Key, InputStream istream, long numBytes, String contentType, String md5Hash ) throws AmazonClientException {
+        boolean hashOK = false;
+        // Calculate the MD5 hash as the data is written
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength( numBytes );
+        metadata.setContentType( contentType );
+        HashMap<String, String> userMetaData = new HashMap<String, String>();
+        userMetaData.put(USER_MD5_HASH, md5Hash);
+        metadata.setUserMetadata(userMetaData);
+        PutObjectRequest putRequest = new PutObjectRequest( getBucketName(), s3Key, istream, metadata );
+        PutObjectResult rslt = getS3Client().putObject( putRequest );
+        // get the MD5 hash that was calculated for this write (put) transaction
+        String s3MD5HashBase64 = rslt.getContentMd5();
+        byte[] s3Bytes = Base64.decode(s3MD5HashBase64);
+        String s3MD5Hash = Hex.encodeHexString(s3Bytes);
+        if (! md5Hash.equals( s3MD5Hash )) {
+            log.error(this.getClass().getName() + "::writeStream: error writing to S3 storage for " + s3Key);
         }
-		finally {
-		    if (distream != null) {
-		        try { distream.close(); } catch (IOException e) {}
-		    }
-		}
 		return hashOK;
     }
 	
@@ -207,18 +246,22 @@ class S3Service implements IS3Keys {
 	 * </p> 
 	 * @param s3Key The S3 path (key) that the file should be written to.
 	 * @param outFile A File object for the file that will be written to S3
+	 * @param md5Hash the MD5 hash for the file being written to S3
 	 * @return true if the write operation succeeded. False otherwise.
 	 * @throws AmazonClientException
 	 * @throws FileNotFoundException
 	 */
-    public boolean writeFile(String s3Key, File outFile ) throws AmazonClientException, FileNotFoundException {
+    public boolean writeFile(String s3Key, File outFile, String md5Hash ) throws AmazonClientException, FileNotFoundException {
+        // if a hash is not provided, calcuate the hash
+        if (md5Hash == null || md5Hash.length() == 0) {
+            md5Hash = calculateMD5Hash( outFile, log);
+        }
         InputStream istream = new FileInputStream( outFile );
         long length = outFile.length();
         boolean hashOK = false;
 		try {
 		    String contentType = findContentType( outFile.getPath() );
-		    
-			hashOK = writeStream(s3Key, istream, length, contentType );
+			hashOK = writeStream(s3Key, istream, length, contentType, md5Hash );
 		}
 		finally {
 			if (istream != null) {

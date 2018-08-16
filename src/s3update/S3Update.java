@@ -39,8 +39,12 @@ import com.amazonaws.AmazonClientException;
  * should be topstonesoftware.com.
  * </p>
  * <p>
- * The trees on the local computer and S3 will match. If the hashes of the local file and the
- * S3 file do not match, the local file will be copied to S3.
+ * When the directory trees on the local computer matches the S3 (logical) tree, the hash value
+ * for the S3 file is checked against the hash value for the local file. If they do not match
+ * the local file is copied to S3. 
+ * </p>
+ * <p>
+ * The MD5 hash value for the S3 file is stored in the user metadata for the file.
  * </p>
  * <p>
  * For a write-up on the Java File object path functions see https://www.baeldung.com/java-path.
@@ -71,66 +75,19 @@ public class S3Update {
     }
     
     
-    protected String calculateMD5Hash(InputStream stream, String path ) {
-        String md5 = "";
-        try {
-            md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex( stream );
-        } catch (IOException e) {
-            log.error("Error calculating md5 hash for " + path );
+    protected boolean gitPath(File file) {
+        boolean isGitPath = false;
+        String path = file.getPath();
+        int ix = path.lastIndexOf( File.separatorChar );
+        if (ix >= 0) {
+            path = path.substring(ix+1);
         }
-        return md5;
-    }
-    
-    /**
-     * Calculate the MD5 cryptographic hash for a file on the local computer.
-     * @param file
-     * @return
-     */
-    protected String calculateMD5Hash(File file ) {
-        String md5 = "";
-        FileInputStream fis = null;
-        try {
-            fis = new FileInputStream( file );
-            md5 = calculateMD5Hash( fis, file.getPath() );
-        } catch (IOException e) {
-            log.error("Error referencing file " + file.getPath() );
+        if (path.length() > 0) {
+            isGitPath = path.equals(".git");
         }
-        finally {
-            if (fis != null) {
-                try { fis.close(); } catch (IOException e) {}
-            }
-        }
-        return md5;
+        return isGitPath;
     }
-    
-  
-    /**
-     * <p>
-     * Read an S3 file and calculate the MD5 hash.
-     * </p>
-     * <p>
-     * According to the AWS documentation, S3 metadata contains an MD5 hash. Unfortunately, in practice this
-     * hash value always seems to be null. There does not appear to be a way to obtain an accurate MD5 hash without reading
-     * the file (unless, as a user you store your own metadata). Obviously this is a problem for large files, since reading
-     * the file involves transferring the file over HTTP.
-     * </p>
-     * <p>
-     * One way to make this faster would be to move this function to an AWS Lambda function. The file would still have to be
-     * read, but it would be read within Amazon's virtual private cloud (VPC). The VPC network speed can be expected to be
-     * close to the speed of disk. This AWS Lambda function would return the MD5 hash.
-     * </p>
-     * <p>
-     * For a discussion of Lambda functions and example Java code, see https://github.com/IanLKaplan/LambdaImageProcessing
-     * </p>
-     * 
-     * @param s3Path
-     * @return the MD5 hash for the file or an empty string if the calculation failed.
-     */
-    protected String calculateS3MD5Hash(final String s3Path ) {
-        InputStream istream = s3Service.s3ToInputStream(s3Path);
-        String md5hash = calculateMD5Hash( istream, s3Path );
-        return md5hash;
-    }
+
 
     /**
      * <p>
@@ -147,14 +104,17 @@ public class S3Update {
         if (file.exists()) {
             if (file.canRead()) {
                 if (file.isDirectory()) {
-                    log.info("processing directory " + file.getPath() );
-                    File[] fileList = file.listFiles();
-                    for (File fileElem : fileList ) {
-                        // Replace back-slash characters for Windows file systems.
-                        updateS3( fileElem );
+                    if (! gitPath( file )) {
+                        log.info("processing directory " + file.getPath() );
+                        File[] fileList = file.listFiles();
+                        for (File fileElem : fileList ) {
+                            // Replace back-slash characters for Windows file systems.
+                            updateS3( fileElem );
+                        }
                     }
                 } else { // it's not a directory, so presumably it's a file
                     boolean copyLocalFile = false;
+                    // A hack to convert Windows paths to slash separated paths
                     String s3Path = file.getPath().replace('\\', '/');
                     if (pathPrefix.length() > 0) {
                         s3Path = s3Path.substring( pathPrefix.length());
@@ -162,14 +122,17 @@ public class S3Update {
                             s3Path = s3Path.substring(1);
                         }
                     }
+                    String sourceMD5 = "";
                     if (s3Service.pathExists(s3Path)) {
-                        String sourceMD5 = calculateMD5Hash( file );
-                        String s3MD5 = calculateS3MD5Hash( s3Path );
-                        if (sourceMD5.length() > 0 && s3MD5.length() > 0) {
-                            if (! sourceMD5.equals(s3MD5)) {
-                                // The file exists on S3 but does not match the local file, so copy the local file
-                                copyLocalFile = true;
-                            }
+                        // calculate the MD5 hash for the local file
+                        sourceMD5 = S3Service.calculateMD5Hash( file, log );
+                        // get the MD5 hash for the S3 file from the user metadata
+                        String s3MD5 = s3Service.getS3FileMD5Hash(s3Path);
+                        if (s3MD5.length() > 0) {
+                            copyLocalFile = (! sourceMD5.equals( s3MD5 ));
+                        } else {
+                            // write the file out with MD5 metadata
+                            copyLocalFile = true;
                         }
                     } else { // the object doesn't exist on S3
                         copyLocalFile = true;
@@ -178,7 +141,7 @@ public class S3Update {
                         // write the local file to S3 on the path s3Path
                         try {
                             log.info("Copying " + file.getPath() );
-                            s3Service.writeFile(s3Path, file);
+                            s3Service.writeFile(s3Path, file, sourceMD5 );
                         } catch (AmazonClientException | FileNotFoundException e) {
                             log.error("Error writing file to S3 path " + s3Path);
                         }
@@ -192,6 +155,7 @@ public class S3Update {
         }
     }
     
+
     protected void application( String[] args ) {
         if (args.length == 2) {
             String sourceDir = args[0];
