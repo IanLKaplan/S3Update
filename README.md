@@ -12,6 +12,14 @@ When changes are made, the modified files must be copied over.
 This application allows entire directory trees to be copied to AWS S3. Once the web site exists on S3 and local changes are
 made, this applicaiton will copy over the files that have changed.
 
+## Points of Interest in the Source Code
+
+Access to S3 is handled through the S3Service class. This class is stand alone and provides useful Java code for accessing S3.
+
+In an attempt to reduce the overhead of comparing local files to files on S3, files are stored with the MD5 hash for the file in the user meta-data.
+
+S3 files are stored with an ETag hash value. However, the calculation of this hash value can be complicated and is not fully documented by Amazon. To avoid this complexity, the MD5 hash is calculated when the file is stored.
+
 ## Building a web site with S3
 
 Amazon S3 content is web based (e.g., S3 content is available via HTTP). By default the content is not visible outside of 
