@@ -14,11 +14,19 @@ made, this applicaiton will copy over the files that have changed.
 
 ## Points of Interest in the Source Code
 
+### S3 read/write
+
 Access to S3 is handled through the S3Service class. This class is stand alone and provides useful Java code for accessing S3.
 
 In an attempt to reduce the overhead of comparing local files to files on S3, files are stored with the MD5 hash for the file in the user meta-data.
 
 S3 files are stored with an ETag hash value. However, the calculation of this hash value can be complicated and is not fully documented by Amazon. To avoid this complexity, the MD5 hash is calculated when the file is stored.
+
+### Threading
+
+The code compares MD5 hashes, which in theory should be fast. However, the S3 MD5 hash is fetched via an HTTP transaction,
+which is relatively slow. To improve performance, the code is multi-threaded. The thread model uses is as simple as
+possible and is customized for the local application.
 
 ## Building a web site with S3
 
