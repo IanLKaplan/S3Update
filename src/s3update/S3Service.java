@@ -71,7 +71,8 @@ class S3Service implements IS3Keys {
         GIF("image/gif"),   // GIF image; Defined in RFC 2045 and RFC 2046
         JPEG("image/jpeg"), // JPEG JFIF image; Defined in RFC 2045 and RFC 2046
         PNG("image/png"),   // Portable Network Graphics; Registered,[13] Defined in RFC 2083
-        TIFF("image/tiff"); // TIF image;
+        TIFF("image/tiff"), // TIF image;
+        PDF("application/pdf");
         
         private final String contentType;
         private S3ContentType( final String type ) {
@@ -96,6 +97,8 @@ class S3Service implements IS3Keys {
             contentType = S3ContentType.TIFF.getType();
         } else if (fileName.endsWith(".gif")) {
             contentType = S3ContentType.GIF.getType();
+        } else if (fileName.endsWith(".pdf")) {
+            contentType = S3ContentType.PDF.getType();
         }
         return contentType;
     }
