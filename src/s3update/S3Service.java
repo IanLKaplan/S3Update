@@ -72,6 +72,9 @@ class S3Service implements IS3Keys {
         JPEG("image/jpeg"), // JPEG JFIF image; Defined in RFC 2045 and RFC 2046
         PNG("image/png"),   // Portable Network Graphics; Registered,[13] Defined in RFC 2083
         TIFF("image/tiff"), // TIF image;
+        PLAIN_TEXT("text/plain"),
+        ZIP("application/zip"),
+        GZIP("application/x-gzip"),
         PDF("application/pdf");
         
         private final String contentType;
@@ -88,6 +91,7 @@ class S3Service implements IS3Keys {
      * @return the HTTP content type
      */
     private String findContentType( String fileName ) {
+        fileName = fileName.toLowerCase();
         String contentType = S3ContentType.TEXT.getType();
         if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
             contentType = S3ContentType.JPEG.getType();
@@ -99,7 +103,22 @@ class S3Service implements IS3Keys {
             contentType = S3ContentType.GIF.getType();
         } else if (fileName.endsWith(".pdf")) {
             contentType = S3ContentType.PDF.getType();
+        } else if (fileName.endsWith(".java")) {
+            contentType = S3ContentType.PLAIN_TEXT.getType();
+        } else if (fileName.endsWith(".zip")) {
+            contentType = S3ContentType.ZIP.getType();
+        } else if (fileName.endsWith(".gz")) {
+            contentType = S3ContentType.GZIP.getType();
+        } else if (fileName.endsWith(".h")) {
+            contentType = S3ContentType.PLAIN_TEXT.getType();
+        } else if (fileName.endsWith(".rnw")) {
+            contentType = S3ContentType.PLAIN_TEXT.getType();
+        } else if (fileName.endsWith(".r")) {
+            contentType = S3ContentType.PLAIN_TEXT.getType();
+        } else if (fileName.endsWith(".c")) {
+            contentType = S3ContentType.PLAIN_TEXT.getType();
         }
+        
         return contentType;
     }
 		

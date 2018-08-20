@@ -13,7 +13,12 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.log4j.Logger;
 
 import com.amazonaws.AmazonClientException;
@@ -47,18 +52,10 @@ import com.amazonaws.AmazonClientException;
  * The MD5 hash value for the S3 file is stored in the user metadata for the file.
  * </p>
  * <p>
- * For a write-up on the Java File object path functions see https://www.baeldung.com/java-path.
+ * S3 is a REST service accessed via HTTP. HTTP is relatively slow and there is a lot of waiting
+ * for the HTTP transaction to complete. To make this application faster, it is multi-threaded
+ * so that multiple HTTP threads can be active at the same time.
  * </p>
- * <pre>
- *   File file = new File("foo/foo-one.txt");
- *   String path = file.getPath();
- * </pre>
- * <p>
- * The path variable would have the value:
- * <pre>
- *   foo/foo-one.txt  // on Unix systems
- *   foo\foo-one.txt  // on Windows systems
- * </pre>
  * <p>
  * Aug 8, 2018
  * </p>
@@ -66,9 +63,12 @@ import com.amazonaws.AmazonClientException;
  * @author Ian Kaplan, Topstone Software (www.topstonesoftware.com), iank@bearcave.com
  */
 public class S3Update {
+    private static final int NUM_THREADS = 32;
     private Logger log = Logger.getLogger(getClass().getName());
     private String pathPrefix = "";
     private S3Service s3Service = null;
+    private Update update = null;
+    private ArrayList<Pair<File, String>> updateList = new ArrayList<Pair<File, String>>();
     
     protected void usage() {
         System.err.println("usage: " + this.getClass().getName() + "<source dir> <s3 root path>");
@@ -91,8 +91,7 @@ public class S3Update {
 
     /**
      * <p>
-     * This function recursively traverses the local directory tree in breath first order copying
-     * any files that do not exist and updating files that do not match in the S3 "directory tree".
+     * Traverse the directory tree and build a list of (File, s3 path) pairs.
      * </p>
      * <p>
      * The match is determined on the basis of the MD5 hash.
@@ -100,20 +99,18 @@ public class S3Update {
      * @param sourcePath
      * @param s3Root
      */
-    protected void updateS3(File file) {
+    protected void traverseDirTree(File file) {
         if (file.exists()) {
             if (file.canRead()) {
                 if (file.isDirectory()) {
                     if (! gitPath( file )) {
-                        log.info("processing directory " + file.getPath() );
                         File[] fileList = file.listFiles();
                         for (File fileElem : fileList ) {
                             // Replace back-slash characters for Windows file systems.
-                            updateS3( fileElem );
+                            traverseDirTree( fileElem );
                         }
                     }
                 } else { // it's not a directory, so presumably it's a file
-                    boolean copyLocalFile = false;
                     // A hack to convert Windows paths to slash separated paths
                     String s3Path = file.getPath().replace('\\', '/');
                     if (pathPrefix.length() > 0) {
@@ -122,30 +119,8 @@ public class S3Update {
                             s3Path = s3Path.substring(1);
                         }
                     }
-                    String sourceMD5 = "";
-                    if (s3Service.pathExists(s3Path)) {
-                        // calculate the MD5 hash for the local file
-                        sourceMD5 = S3Service.calculateMD5Hash( file, log );
-                        // get the MD5 hash for the S3 file from the user metadata
-                        String s3MD5 = s3Service.getS3FileMD5Hash(s3Path);
-                        if (s3MD5.length() > 0) {
-                            copyLocalFile = (! sourceMD5.equals( s3MD5 ));
-                        } else {
-                            // write the file out with MD5 metadata
-                            copyLocalFile = true;
-                        }
-                    } else { // the object doesn't exist on S3
-                        copyLocalFile = true;
-                    }        
-                    if (copyLocalFile) {
-                        // write the local file to S3 on the path s3Path
-                        try {
-                            log.info("Copying " + file.getPath() );
-                            s3Service.writeFile(s3Path, file, sourceMD5 );
-                        } catch (AmazonClientException | FileNotFoundException e) {
-                            log.error("Error writing file to S3 path " + s3Path);
-                        }
-                    }
+                    Pair<File, String> pair = new ImmutablePair<File, String>(file, s3Path);
+                    updateList.add(pair);
                 }
             } else {
                 log.error("Cannot read path " + file.getPath() );
@@ -167,8 +142,17 @@ public class S3Update {
                 }
                 s3Service = new S3Service( s3Root );
                 if (s3Service.s3BucketExist()) {
+                    update = new Update( s3Service );
                     File file = new File(sourceDir);
-                    updateS3(file);
+                    traverseDirTree(file);
+                    SynchronizedList<Pair<File, String>> queue = new SynchronizedList<Pair<File, String>>( updateList );
+                    ExecutorService pool = Executors.newFixedThreadPool( NUM_THREADS );
+                    for (int i = 0; i < NUM_THREADS; i++) {
+                        pool.execute(new UpdateThread(queue, update));
+                    }
+                    pool.shutdown();
+                    while (! pool.isTerminated() ) {
+                    }
                 } else {
                     log.error("There is no S3 bucket with the name " + s3Root );
                 }
