@@ -68,6 +68,7 @@ class S3Service implements IS3Keys {
      */
     public enum S3ContentType {
         TEXT("text/html"),
+        CSS("text/css"),
         GIF("image/gif"),   // GIF image; Defined in RFC 2045 and RFC 2046
         JPEG("image/jpeg"), // JPEG JFIF image; Defined in RFC 2045 and RFC 2046
         PNG("image/png"),   // Portable Network Graphics; Registered,[13] Defined in RFC 2083
@@ -75,6 +76,8 @@ class S3Service implements IS3Keys {
         PLAIN_TEXT("text/plain"),
         ZIP("application/zip"),
         GZIP("application/x-gzip"),
+        JAR("application/java-archive"),
+        JS("application/javascript"),
         MPEG("applicaiton/mpeg"),
         MPEG4("video/mp4"),
         MOV("video/quicktime"),
@@ -114,6 +117,8 @@ class S3Service implements IS3Keys {
             contentType = S3ContentType.ZIP.getType();
         } else if (fileName.endsWith(".gz")) {
             contentType = S3ContentType.GZIP.getType();
+        } else if (fileName.endsWith(".jar")) {
+            contentType = S3ContentType.JAR.getType();
         } else if (fileName.endsWith(".h")) {
             contentType = S3ContentType.PLAIN_TEXT.getType();
         } else if (fileName.endsWith(".rnw")) {
@@ -122,6 +127,8 @@ class S3Service implements IS3Keys {
             contentType = S3ContentType.PLAIN_TEXT.getType();
         } else if (fileName.endsWith(".c")) {
             contentType = S3ContentType.PLAIN_TEXT.getType();
+        } else if (fileName.endsWith(".js")) {
+           contentType = S3ContentType.JS.getType();
         } else if (fileName.endsWith(".mp3")) {
             contentType = S3ContentType.MPEG.getType();
         } else if (fileName.endsWith(".mpg")) {
@@ -134,6 +141,8 @@ class S3Service implements IS3Keys {
             contentType = S3ContentType.MOV.getType();
         } else if (fileName.endsWith(".wmv")) {
             contentType = S3ContentType.MPEG.getType();
+        } else if (fileName.endsWith(".css")) {
+            contentType = S3ContentType.CSS.getType();
         }
         
         return contentType;

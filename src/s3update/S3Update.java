@@ -113,14 +113,16 @@ public class S3Update {
                 } else { // it's not a directory, so presumably it's a file
                     // A hack to convert Windows paths to slash separated paths
                     String s3Path = file.getPath().replace('\\', '/');
-                    if (pathPrefix.length() > 0) {
-                        s3Path = s3Path.substring( pathPrefix.length());
-                        if (s3Path.startsWith("/")) {
-                            s3Path = s3Path.substring(1);
+                    if (! s3Path.endsWith("~")) {  // don't copy emacs temp files
+                        if (pathPrefix.length() > 0) {
+                            s3Path = s3Path.substring( pathPrefix.length());
+                            if (s3Path.startsWith("/")) {
+                                s3Path = s3Path.substring(1);
+                            }
                         }
+                        Pair<File, String> pair = new ImmutablePair<File, String>(file, s3Path);
+                        updateList.add(pair);
                     }
-                    Pair<File, String> pair = new ImmutablePair<File, String>(file, s3Path);
-                    updateList.add(pair);
                 }
             } else {
                 log.error("Cannot read path " + file.getPath() );
@@ -183,6 +185,12 @@ public class S3Update {
      * <li>/home/iank/topstonesoftware.com</li>
      * <li>topstonesoftware.com</li>
      * </ol>
+     * <p>
+     * Note that in the source you can also have a subdirectory. For example:
+     * </p>
+     * <pre>
+     *   /home/iank/topstonesoftware.com/galleries topstonesoftware.com
+     * </pre>
      * @param args [path on local system] [S3 bucket name]
      */
     public static void main(String[] args) {
