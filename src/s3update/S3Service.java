@@ -75,6 +75,11 @@ class S3Service implements IS3Keys {
         PLAIN_TEXT("text/plain"),
         ZIP("application/zip"),
         GZIP("application/x-gzip"),
+        MPEG("applicaiton/mpeg"),
+        MPEG4("video/mp4"),
+        MOV("video/quicktime"),
+        WMV("video/x-ms-wmv"),
+        AVI("video/x-msvideo"),
         PDF("application/pdf");
         
         private final String contentType;
@@ -117,6 +122,18 @@ class S3Service implements IS3Keys {
             contentType = S3ContentType.PLAIN_TEXT.getType();
         } else if (fileName.endsWith(".c")) {
             contentType = S3ContentType.PLAIN_TEXT.getType();
+        } else if (fileName.endsWith(".mp3")) {
+            contentType = S3ContentType.MPEG.getType();
+        } else if (fileName.endsWith(".mpg")) {
+            contentType = S3ContentType.MPEG.getType();
+        } else if (fileName.endsWith(".mpeg")) {
+            contentType = S3ContentType.MPEG.getType();
+        } else if (fileName.endsWith(".mp4")) {
+            contentType = S3ContentType.MPEG4.getType();
+        } else if (fileName.endsWith(".mov")) {
+            contentType = S3ContentType.MOV.getType();
+        } else if (fileName.endsWith(".wmv")) {
+            contentType = S3ContentType.MPEG.getType();
         }
         
         return contentType;
